@@ -23,7 +23,7 @@ BEGIN {                ## no critic (Subroutines::RequireArgUnpacking)
             PRE_PUSH PRE_RECEIVE UPDATE POST_RECEIVE POST_UPDATE
             PRE_AUTO_GC POST_REWRITE
 
-            REF_UPDATE PATCHSET_CREATED DRAFT_PUBLISHED
+            REF_UPDATE PATCHSET_CREATED DRAFT_PUBLISHED CHANGE_MERGED
           /;
 
     for my $installer (@installers) {
@@ -527,6 +527,56 @@ sub _prepare_gerrit_patchset {
     return;
 }
 
+# The following routine is the post_hook used by the Gerrit change-merged
+# hook. The only thing it does is check for errors and post a comment in
+# Gerrit telling about them.
+
+sub _gerrit_change_merged_post_hook {
+    my ($hook_name, $git, $args) = @_;
+
+    my @errors = $git->get_errors();
+
+    return unless @errors;
+
+    my $change   = $args->{'--change'}
+        or die __PACKAGE__, ": Missing --change argument to Gerrit's $hook_name hook.\n";
+
+    my $resource = "/changes/$change/revisions/current/review";
+
+    my $params = { message => join("\n\n", @errors) };
+
+    my $eval = eval { $args->{gerrit}->POST($resource, $params) };
+    unless ($eval) {
+        my $error = $@;
+        require Data::Dumper;
+        die __PACKAGE__ . ": error in Gerrit::REST::POST(\n" . Data::Dumper::Dumper($resource, $params) . ")\n: $error\n";
+    }
+
+    return;
+}
+
+# Gerrit's change-merged hook is invoked when a change is merged in its
+# branch.  It's invoked asynchronously, i.e., it can't stop the merge to
+# happen. Instead, if it detects any problem, we prepare a post hook action
+# in which we see if there were errors that should be signaled via a comment
+# in Gerrit. It's commonly used to trigger actions that should ocurr after a
+# commit has been integrated in a real branch.  The arguments for the hook
+# are these:
+
+# change-merged --change <change id> --change-url <change url> \
+# --change-owner <change owner> --project <project name> --branch <branch> \
+# --topic <topic> --submitter <submitter> --commit <sha1>
+
+sub _prepare_gerrit_change_merged {
+    my ($git, $args) = @_;
+
+    _prepare_gerrit_args($git, $args);
+
+    post_hook(\&_gerrit_change_merged_post_hook);
+
+    return;
+}
+
 # The %prepare_hook hash maps hook names to the routine that must be
 # invoked in order to "prepare" their arguments.
 
@@ -539,6 +589,7 @@ my %prepare_hook = (
     'ref-update'       => \&_prepare_gerrit_ref_update,
     'patchset-created' => \&_prepare_gerrit_patchset,
     'draft-published'  => \&_prepare_gerrit_patchset,
+    'change-merged'    => \&_prepare_gerrit_change_merged,
 );
 
 ################
@@ -1056,6 +1107,15 @@ doesn't work for draft changes, the B<draft-published> hook is a good time
 to work on them. All plugins that work on the B<patchset-created> also work
 on the B<draft-published> hook to cast a vote when drafts are published.
 
+=head3 change-merged
+
+The B<change-merged> hook is executed when a change is merged in its
+branch. It's invoked asynchronously, i.e., it can't stop the merge to
+happen. Instead, if it detects any problem, we prepare a post hook action in
+which we see if there were errors that should be signaled via a comment in
+Gerrit. It's commonly used to trigger actions that should ocurr after a
+commit has been integrated in a real branch.
+
 =head1 CONFIGURATION
 
 Git::Hooks is configured via Git's own configuration
@@ -1475,6 +1535,7 @@ hooks using the C<Git::Hooks::get_input_data> method.
 =item * REF_UPDATE(GIT, OPTS)
 =item * PATCHSET_CREATED(GIT, OPTS)
 =item * DRAFT_PUBLISHED(GIT, OPTS)
+=item * CHANGE_MERGED(GIT, OPTS)
 
 These are Gerrit-specific hooks. Gerrit invokes them passing a list of
 option/value pairs which are converted into a hash, which is passed by

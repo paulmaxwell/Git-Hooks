@@ -295,12 +295,13 @@ supports its L<own
 hooks|https://gerrit-review.googlesource.com/Documentation/config-hooks.html>
 instead.
 
-Git::Hooks supports just three of the many Gerrit hooks so far:
-C<ref-update>, C<patchset-created>, and C<draft-published>. The first one is
-much like the standard hooks C<pre-receive> and C<update> in that it can
-reject pushes when the commits being pushed don't comply. However, since
-Gerrit's revision process takes place before the commits are integrated,
-it's more useful to enable just the other two.
+Git::Hooks supports just four of the many Gerrit hooks so far:
+C<ref-update>, C<patchset-created>, C<draft-published>, and
+C<change-merged>. The C<ref-update> is much like the standard hooks
+C<pre-receive> and C<update> in that it can reject pushes when the commits
+being pushed don't comply. However, since Gerrit's revision process takes
+place before the commits are integrated, it's more useful to enable just the
+C<patchset-created> and the C<draft-published> instead.
 
 First, you have to create the same driver script as L<described for the
 server|/Server Driver Script>. There is a catch though. Gerrit undefines the
